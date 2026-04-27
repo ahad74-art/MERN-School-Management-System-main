@@ -1,0 +1,21 @@
+const mongoose = require("mongoose")
+
+const adminSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    email: { type: String, unique: true, required: true },
+    password: { type: String, required: true },
+    dateOfBirth: { type: Date },
+    gender: { type: String, enum: ['Male', 'Female', 'Other'] },
+    phone: { type: String },
+    address: { type: String },
+    role: { type: String, default: "Admin" },
+    schoolName: { type: String, unique: true, required: true },
+    resetToken: { type: String },
+    resetTokenExpiry: { type: Date },
+    resetOtp: { type: String },
+    resetOtpExpiry: { type: Date },
+    resetOtpAttempts: { type: Number, default: 0 },
+    resetOtpLastSent: { type: Date },
+}, { timestamps: true });
+
+module.exports = mongoose.model("admin", adminSchema)
