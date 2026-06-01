@@ -12,7 +12,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const createCheckoutSession = async (req, res) => {
     try {
-        const { studentId, feeStructureId, amount, currency = 'usd' } = req.body;
+        const { studentId, feeStructureId, amount } = req.body;
 
         if (!studentId || !feeStructureId || !amount) {
             return res.status(400).json({ success: false, message: 'studentId, feeStructureId and amount are required' });
@@ -36,14 +36,28 @@ const createCheckoutSession = async (req, res) => {
             return res.status(409).json({ success: false, message: 'A similar payment is already in progress', paymentId: existing.paymentId });
         }
 
+        // PKR → USD conversion
+        const PKR_TO_USD_RATE = parseFloat(process.env.PKR_TO_USD_RATE) > 0
+            ? parseFloat(process.env.PKR_TO_USD_RATE)
+            : 280;
+        const pkrAmount = amount;
+        const usdAmount = Math.round((pkrAmount / PKR_TO_USD_RATE) * 100) / 100;
+
+        if (usdAmount < 0.50) {
+            return res.status(400).json({
+                success: false,
+                message: 'Amount too small for Stripe processing (minimum $0.50)'
+            });
+        }
+
         // Amount in smallest currency unit (cents for USD)
-        const unitAmount = Math.round(amount * 100);
+        const unitAmount = Math.round(usdAmount * 100);
 
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
             line_items: [{
                 price_data: {
-                    currency: currency.toLowerCase(),
+                    currency: 'usd',
                     product_data: {
                         name: feeStructure.name,
                         description: `Fee payment for ${student.name} (Roll: ${student.rollNum})`,
@@ -60,8 +74,9 @@ const createCheckoutSession = async (req, res) => {
                 studentId: studentId.toString(),
                 feeStructureId: feeStructureId.toString(),
                 schoolId: feeStructure.school.toString(),
-                amount: amount.toString(),
-                currency,
+                pkrAmount: pkrAmount.toString(),
+                exchangeRate: PKR_TO_USD_RATE.toString(),
+                usdAmount: usdAmount.toString(),
             },
         });
 
@@ -70,8 +85,11 @@ const createCheckoutSession = async (req, res) => {
             student: studentId,
             feeStructure: feeStructureId,
             school: feeStructure.school,
-            amount,
-            currency: currency.toUpperCase(),
+            amount: pkrAmount,          // PKR — for fee tracking
+            currency: 'PKR',            // stored as PKR
+            feeAmountPKR: pkrAmount,    // explicit PKR field
+            exchangeRate: PKR_TO_USD_RATE,
+            amountChargedUSD: usdAmount,
             paymentType: 'full',
             paymentGateway: 'stripe',
             paymentMethod: 'card',
@@ -172,11 +190,34 @@ const verifyCheckoutSession = async (req, res) => {
         if (!session_id) return res.status(400).json({ success: false, message: 'session_id required' });
 
         const session = await stripe.checkout.sessions.retrieve(session_id);
-        const payment = await Payment.findOne({ gatewayPaymentId: session_id })
+
+        let payment = await Payment.findOne({ gatewayPaymentId: session_id });
+        if (!payment) return res.status(404).json({ success: false, message: 'Payment record not found' });
+
+        // If Stripe says paid but our DB still shows pending — complete it now
+        // (webhook may not have fired yet in local dev)
+        if (session.payment_status === 'paid' && payment.status !== 'completed') {
+            payment.status = 'completed';
+            payment.completedAt = new Date();
+            payment.transactionId = session.payment_intent;
+            payment.gatewayResponse = session;
+            if (!payment.receiptNumber) payment.generateReceiptNumber();
+            await payment.save();
+
+            // Update student fee record
+            const studentFee = await StudentFee.findOne({
+                student: payment.student,
+                feeStructure: payment.feeStructure,
+            });
+            if (studentFee) await studentFee.addPayment(payment._id, payment.amount);
+
+            console.log(`✅ Payment completed via verify: ${payment.paymentId} | Receipt: ${payment.receiptNumber}`);
+        }
+
+        // Re-fetch with populated fields
+        payment = await Payment.findOne({ gatewayPaymentId: session_id })
             .populate('feeStructure', 'name feeType')
             .populate('student', 'name rollNum');
-
-        if (!payment) return res.status(404).json({ success: false, message: 'Payment record not found' });
 
         res.json({
             success: true,

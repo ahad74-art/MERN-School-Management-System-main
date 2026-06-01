@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Paper, Box, Typography, ButtonGroup, Button, Popper, Grow,
     ClickAwayListener, MenuList, MenuItem, Chip, Accordion,
-    AccordionSummary, AccordionDetails
+    AccordionSummary, AccordionDetails, Tooltip
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { KeyboardArrowDown, KeyboardArrowUp } from '@mui/icons-material';
@@ -131,10 +131,26 @@ const TeacherClassDetails = ({ selectedClass }) => {
                         sx={{ mb: 2, borderRadius: '12px !important', border: '1px solid #E2E8F0', '&:before': { display: 'none' } }}>
                         <AccordionSummary expandIcon={<ExpandMoreIcon sx={{ color: '#64748B' }} />}
                             sx={{ borderRadius: '12px', background: '#fff', '&:hover': { background: '#F8FAFC' } }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexGrow: 1 }}>
                                 <Typography sx={{ fontSize: 16, fontWeight: 600, color: '#1E293B' }}>{className}</Typography>
                                 <Chip label={`${groupedStudents[className].students.length} Students`} size="small"
                                     sx={{ fontSize: 11, bgcolor: '#EFF6FF', color: '#1E3A8A', fontWeight: 500 }} />
+                                <Tooltip title={!subjectID ? 'No subject assigned' : ''}>
+                                    <span>
+                                        <Button
+                                            variant="contained"
+                                            size="small"
+                                            disabled={!subjectID}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                navigate(`/Teacher/class/bulk-attendance/${groupedStudents[className].classId}/${subjectID}`);
+                                            }}
+                                            sx={{ bgcolor: '#1E3A8A', borderRadius: '8px', textTransform: 'none', fontSize: 12, '&:hover': { bgcolor: '#1E293B' } }}
+                                        >
+                                            Take Class Attendance
+                                        </Button>
+                                    </span>
+                                </Tooltip>
                             </Box>
                         </AccordionSummary>
                         <AccordionDetails sx={{ p: 0 }}>

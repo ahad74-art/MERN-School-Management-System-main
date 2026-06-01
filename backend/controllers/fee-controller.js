@@ -3,6 +3,7 @@ const StudentFee = require('../models/studentFeeSchema');
 const Payment = require('../models/paymentSchema');
 const Student = require('../models/studentSchema');
 const Sclass = require('../models/sclassSchema');
+const mongoose = require('mongoose');
 
 // Create fee structure
 const createFeeStructure = async (req, res) => {
@@ -285,11 +286,11 @@ const getAllPayments = async (req, res) => {
             search
         } = req.query;
 
-        const query = { school: schoolId };
+        const query = { school: new mongoose.Types.ObjectId(schoolId) };
 
         if (status) query.status = status;
         if (paymentGateway) query.paymentGateway = paymentGateway;
-        if (studentId) query.student = studentId;
+        if (studentId) query.student = new mongoose.Types.ObjectId(studentId);
         
         if (dateFrom || dateTo) {
             query.paymentDate = {};
@@ -527,6 +528,9 @@ const markFeeAsPaid = async (req, res) => {
         } = req.body;
 
         const { currentUser } = req.user || req.body;
+        if (!currentUser) {
+            return res.status(400).json({ success: false, message: 'currentUser is required' });
+        }
 
         const studentFee = await StudentFee.findById(studentFeeId)
             .populate('student', 'name rollNum')
@@ -618,18 +622,18 @@ const getPaymentAnalytics = async (req, res) => {
             academicYear, 
             dateFrom, 
             dateTo,
-            groupBy = 'month' // month, week, day
+            groupBy = 'month'
         } = req.query;
 
-        const matchQuery = { school: schoolId };
+        // CRITICAL: convert string to ObjectId for aggregation pipeline
+        const schoolObjectId = new mongoose.Types.ObjectId(schoolId);
+        const matchQuery = { school: schoolObjectId };
         
         if (academicYear) {
-            // Find all fee structures for the academic year
             const feeStructures = await FeeStructure.find({
-                school: schoolId,
+                school: schoolObjectId,
                 academicYear: academicYear
             }).select('_id');
-            
             matchQuery.feeStructure = { $in: feeStructures.map(fs => fs._id) };
         }
 
@@ -737,7 +741,7 @@ const getPaymentAnalytics = async (req, res) => {
         const outstandingFees = await StudentFee.aggregate([
             {
                 $match: {
-                    school: schoolId,
+                    school: new mongoose.Types.ObjectId(schoolId),
                     status: { $in: ['pending', 'partially_paid', 'overdue'] }
                 }
             },
@@ -895,6 +899,47 @@ const testFeeCreation = async (req, res) => {
     }
 };
 
+// Simple fee summary — uses Mongoose find (auto-casts ObjectId, no aggregation issues)
+const getFeeSummary = async (req, res) => {
+    try {
+        const { schoolId } = req.params;
+
+        // Use Mongoose find — it auto-casts string to ObjectId
+        const completedPayments = await Payment.find({
+            school: schoolId,
+            status: 'completed',
+        }).populate('student', 'name rollNum email').populate('feeStructure', 'name feeType');
+
+        const totalCollected = completedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+        res.json({
+            success: true,
+            totalCollected,
+            totalPayments: completedPayments.length,
+            recentPayments: completedPayments
+                .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+                .slice(0, 20)
+                .map(p => ({
+                    paymentId: p.paymentId,
+                    receiptNumber: p.receiptNumber,
+                    amount: p.amount,
+                    currency: p.currency,
+                    completedAt: p.completedAt,
+                    paymentGateway: p.paymentGateway,
+                    student: {
+                        name: p.student?.name || 'N/A',
+                        rollNum: p.student?.rollNum || 'N/A',
+                        email: p.student?.email || '',
+                    },
+                    feeType: p.feeStructure?.name || 'N/A',
+                })),
+        });
+    } catch (error) {
+        console.error('Error in getFeeSummary:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 // Demo payment completion endpoint (for testing Pakistani payment methods)
 const completeDemoPayment = async (req, res) => {
     try {
@@ -902,11 +947,17 @@ const completeDemoPayment = async (req, res) => {
         
         console.log('Demo payment completion:', { paymentId, studentId, feeStructureId, amount, paymentMethod, currency });
 
+        // Look up the student to get the real school ID
+        const student = await Student.findById(studentId).select('school');
+        if (!student) {
+            return res.status(404).json({ success: false, message: 'Student not found' });
+        }
+
         // Create a demo payment record
         const payment = new Payment({
             student: studentId,
             feeStructure: feeStructureId,
-            school: req.body.school || '507f1f77bcf86cd799439011', // Demo school ID
+            school: student.school,  // Use real school ID from student record
             amount: amount,
             currency: currency,
             paymentType: 'full',
@@ -973,5 +1024,6 @@ module.exports = {
     getPaymentAnalytics,
     exportPaymentData,
     testFeeCreation,
-    completeDemoPayment
+    completeDemoPayment,
+    getFeeSummary,
 };

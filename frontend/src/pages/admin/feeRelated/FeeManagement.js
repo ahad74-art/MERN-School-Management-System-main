@@ -92,6 +92,16 @@ const FeeManagement = () => {
         fetchAnalytics();
     }, [filters]);
 
+    // Auto-refresh payments every 30 seconds to pick up new Stripe payments
+    useEffect(() => {
+        const interval = setInterval(() => {
+            fetchPayments();
+            fetchPendingFees();
+            fetchAnalytics();
+        }, 30000);
+        return () => clearInterval(interval);
+    }, []);
+
     const fetchFeeStructures = async () => {
         try {
             setLoading(true);
@@ -555,13 +565,22 @@ const PaymentsTab = ({
             <Box sx={{ p: 2 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                     <Typography variant="h6">Payment History</Typography>
-                    <Button
-                        variant="outlined"
-                        startIcon={<DownloadIcon />}
-                        onClick={() => onExportData('csv')}
-                    >
-                        Export CSV
-                    </Button>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                            variant="outlined"
+                            startIcon={<DownloadIcon />}
+                            onClick={() => onExportData('csv')}
+                        >
+                            Export CSV
+                        </Button>
+                        <Button
+                            variant="outlined"
+                            onClick={() => window.location.reload()}
+                            sx={{ minWidth: 'auto' }}
+                        >
+                            Refresh
+                        </Button>
+                    </Box>
                 </Box>
 
                 {/* Filters */}
@@ -612,35 +631,38 @@ const PaymentsTab = ({
                 <TableContainer>
                     <Table>
                         <TableHead>
-                            <TableRow>
-                                <TableCell>Payment ID</TableCell>
-                                <TableCell>Student</TableCell>
-                                <TableCell>Fee Type</TableCell>
-                                <TableCell>Amount</TableCell>
-                                <TableCell>Payment Date</TableCell>
-                                <TableCell>Status</TableCell>
-                                <TableCell>Receipt</TableCell>
+                            <TableRow sx={{ background: '#1E293B' }}>
+                                {['Payment ID', 'Student', 'Fee Type', 'Amount', 'Method', 'Payment Date', 'Status', 'Receipt'].map(h => (
+                                    <TableCell key={h} sx={{ color: '#fff', fontWeight: 600, fontSize: 13 }}>{h}</TableCell>
+                                ))}
                             </TableRow>
                         </TableHead>
                         <TableBody>
                             {payments.map((payment) => (
-                                <TableRow key={payment.paymentId}>
+                                <TableRow key={payment.paymentId} sx={{ '&:hover': { background: '#F8FAFC' }, '&:last-child td': { border: 0 } }}>
                                     <TableCell>
-                                        <Typography variant="body2" fontFamily="monospace">
+                                        <Typography sx={{ fontSize: 11, fontFamily: 'monospace', color: '#475569' }}>
                                             {payment.paymentId}
                                         </Typography>
                                     </TableCell>
                                     <TableCell>
-                                        <Typography variant="subtitle2">
-                                            {payment.student.name}
+                                        <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>
+                                            {payment.student?.name || 'N/A'}
                                         </Typography>
-                                        <Typography variant="caption" color="textSecondary">
-                                            {payment.student.rollNum}
+                                        <Typography sx={{ fontSize: 11, color: '#94A3B8' }}>
+                                            Roll: {payment.student?.rollNum || 'N/A'}
                                         </Typography>
                                     </TableCell>
-                                    <TableCell>{payment.feeStructure.name}</TableCell>
-                                    <TableCell>{formatCurrency(payment.amount)}</TableCell>
+                                    <TableCell sx={{ fontSize: 13, color: '#475569' }}>{payment.feeStructure?.name || 'N/A'}</TableCell>
+                                    <TableCell sx={{ fontSize: 13, fontWeight: 700, color: '#16A34A' }}>{formatCurrency(payment.amount)}</TableCell>
                                     <TableCell>
+                                        <Chip
+                                            label={payment.paymentGateway === 'stripe' ? '💳 Stripe' : payment.paymentMethod || 'N/A'}
+                                            size="small"
+                                            sx={{ fontSize: 11, bgcolor: payment.paymentGateway === 'stripe' ? '#EFF6FF' : '#F1F5F9', color: payment.paymentGateway === 'stripe' ? '#1E3A8A' : '#475569' }}
+                                        />
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: 13, color: '#475569' }}>
                                         {new Date(payment.paymentDate).toLocaleDateString()}
                                     </TableCell>
                                     <TableCell>
@@ -648,12 +670,34 @@ const PaymentsTab = ({
                                             label={payment.status.toUpperCase()}
                                             color={getStatusColor(payment.status)}
                                             size="small"
+                                            sx={{ fontSize: 11, borderRadius: '6px' }}
                                         />
                                     </TableCell>
                                     <TableCell>
                                         {payment.receiptNumber && (
-                                            <Tooltip title="Download Receipt">
-                                                <IconButton size="small">
+                                            <Tooltip title={`Download Receipt ${payment.receiptNumber}`}>
+                                                <IconButton
+                                                    size="small"
+                                                    sx={{ color: '#1E3A8A' }}
+                                                    onClick={async () => {
+                                                        try {
+                                                            const res = await fetch(`${process.env.REACT_APP_BASE_URL}/payment/receipt/${payment.paymentId}`);
+                                                            if (res.ok) {
+                                                                const blob = await res.blob();
+                                                                const url = window.URL.createObjectURL(blob);
+                                                                const a = document.createElement('a');
+                                                                a.href = url;
+                                                                a.download = `receipt-${payment.receiptNumber}.pdf`;
+                                                                document.body.appendChild(a);
+                                                                a.click();
+                                                                window.URL.revokeObjectURL(url);
+                                                                document.body.removeChild(a);
+                                                            }
+                                                        } catch (err) {
+                                                            console.error('Receipt download failed:', err);
+                                                        }
+                                                    }}
+                                                >
                                                     <ReceiptIcon />
                                                 </IconButton>
                                             </Tooltip>

@@ -1,4 +1,5 @@
 const bcrypt = require('bcrypt');
+const mongoose = require('mongoose');
 const Student = require('../models/studentSchema.js');
 const Subject = require('../models/subjectSchema.js');
 
@@ -275,6 +276,92 @@ const removeStudentAttendance = async (req, res) => {
     }
 };
 
+const bulkStudentAttendance = async (req, res) => {
+    const { attendanceRecords } = req.body;
+
+    if (!attendanceRecords || !Array.isArray(attendanceRecords) || attendanceRecords.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: 'attendanceRecords array is required and must not be empty'
+        });
+    }
+
+    const skipped = [];
+    let saved = 0;
+
+    try {
+        for (const record of attendanceRecords) {
+            const { studentId, subName, status, date } = record;
+
+            // Validate required fields
+            if (!studentId || !subName || !date) {
+                skipped.push(studentId || 'unknown');
+                continue;
+            }
+
+            // Validate status
+            if (!['Present', 'Absent'].includes(status)) {
+                skipped.push(studentId);
+                continue;
+            }
+
+            const normalizedDate = new Date(date);
+
+            // Check if a record already exists for this student + subject + date
+            const existing = await Student.findOne({
+                _id: studentId,
+                'attendance.subName': subName,
+                'attendance.date': {
+                    $gte: new Date(normalizedDate.toDateString()),
+                    $lt: new Date(new Date(normalizedDate.toDateString()).getTime() + 86400000)
+                }
+            });
+
+            if (existing) {
+                // Update the existing attendance entry's status — no full-doc validation
+                await Student.updateOne(
+                    {
+                        _id: studentId,
+                        'attendance.subName': subName,
+                        'attendance.date': {
+                            $gte: new Date(normalizedDate.toDateString()),
+                            $lt: new Date(new Date(normalizedDate.toDateString()).getTime() + 86400000)
+                        }
+                    },
+                    { $set: { 'attendance.$.status': status } }
+                );
+            } else {
+                // Check session limit only when adding a new entry
+                const subject = await Subject.findById(subName);
+                if (subject && subject.sessions) {
+                    const attendedCount = await Student.aggregate([
+                        { $match: { _id: existing?._id || new mongoose.Types.ObjectId(studentId) } },
+                        { $project: { count: { $size: { $filter: { input: '$attendance', as: 'a', cond: { $eq: ['$$a.subName', new mongoose.Types.ObjectId(subName)] } } } } } }
+                    ]);
+                    const count = attendedCount[0]?.count || 0;
+                    if (count >= subject.sessions) {
+                        skipped.push(studentId);
+                        continue;
+                    }
+                }
+
+                // Push new attendance entry — bypasses full-doc validation
+                await Student.updateOne(
+                    { _id: studentId },
+                    { $push: { attendance: { date: normalizedDate, status, subName } } }
+                );
+            }
+
+            saved++;
+        }
+
+        return res.status(200).json({ success: true, saved, skipped });
+    } catch (error) {
+        console.error('Bulk attendance error:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 
 module.exports = {
     studentRegister,
@@ -292,4 +379,5 @@ module.exports = {
     clearAllStudentsAttendance,
     removeStudentAttendanceBySubject,
     removeStudentAttendance,
+    bulkStudentAttendance,
 };

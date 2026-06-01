@@ -9,9 +9,11 @@ import {
     Warning as WarningIcon,
     CheckCircle as CheckCircleIcon,
     Schedule as ScheduleIcon,
-    Download as DownloadIcon
+    Download as DownloadIcon,
+    Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom';
 
 const StudentFees = () => {
     const { currentUser } = useSelector((state) => state.user);
@@ -19,11 +21,24 @@ const StudentFees = () => {
     const [paymentHistory, setPaymentHistory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+    const [searchParams] = useSearchParams();
 
     useEffect(() => {
         fetchFeeDetails();
         fetchPaymentHistory();
     }, []);
+
+    // If returning from Stripe (session_id in URL), wait briefly then refresh
+    useEffect(() => {
+        const sessionId = searchParams.get('session_id');
+        if (sessionId) {
+            const timer = setTimeout(() => {
+                fetchFeeDetails();
+                fetchPaymentHistory();
+            }, 2000);
+            return () => clearTimeout(timer);
+        }
+    }, [searchParams]);
 
     const fetchFeeDetails = async () => {
         try {
@@ -64,7 +79,6 @@ const StudentFees = () => {
                     studentId: currentUser._id,
                     feeStructureId,
                     amount: fee.pendingAmount,
-                    currency: 'usd',
                 }),
             });
             const data = await res.json();
@@ -134,8 +148,19 @@ const StudentFees = () => {
     return (
         <Box sx={{ p: 3, background: '#F8FAFC', minHeight: '100vh' }}>
             <Box sx={{ mb: 3 }}>
-                <Typography sx={{ fontSize: 26, fontWeight: 700, color: '#1E293B' }}>My Fees</Typography>
-                <Typography sx={{ fontSize: 14, color: '#64748B', mt: 0.5 }}>Track your fee payments and history</Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Box>
+                        <Typography sx={{ fontSize: 26, fontWeight: 700, color: '#1E293B' }}>My Fees</Typography>
+                        <Typography sx={{ fontSize: 14, color: '#64748B', mt: 0.5 }}>Track your fee payments and history</Typography>
+                    </Box>
+                    <Button
+                        variant="outlined" startIcon={<RefreshIcon />}
+                        onClick={() => { fetchFeeDetails(); fetchPaymentHistory(); }}
+                        sx={{ borderRadius: '8px', textTransform: 'none', borderColor: '#E2E8F0', color: '#64748B' }}
+                    >
+                        Refresh
+                    </Button>
+                </Box>
             </Box>
 
             {/* Summary Cards */}

@@ -125,6 +125,20 @@ const paymentSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+
+    // Currency Conversion Fields (for Stripe PKR→USD payments)
+    feeAmountPKR: {
+        type: Number,
+        min: 0
+    },
+    exchangeRate: {
+        type: Number,
+        min: 0
+    },
+    amountChargedUSD: {
+        type: Number,
+        min: 0
+    },
     
     // Refund Information
     refunds: [{

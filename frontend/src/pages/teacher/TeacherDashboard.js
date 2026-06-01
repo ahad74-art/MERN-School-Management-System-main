@@ -25,6 +25,7 @@ import TeacherViewStudent from './TeacherViewStudent';
 import TeacherClassSelector from './TeacherClassSelector';
 import StudentAttendance from '../admin/studentRelated/StudentAttendance';
 import StudentExamMarks from '../admin/studentRelated/StudentExamMarks';
+import TeacherBulkAttendance from './TeacherBulkAttendance';
 import Logout from '../Logout';
 
 const drawerWidth = 220;
@@ -173,6 +174,7 @@ const TeacherDashboard = () => {
                     <Route path="/Teacher/class/student/:id" element={<TeacherViewStudent />} />
                     <Route path="/Teacher/class/student/attendance/:studentID/:subjectID" element={<StudentAttendance situation="Subject" />} />
                     <Route path="/Teacher/class/student/marks/:studentID/:subjectID" element={<StudentExamMarks situation="Subject" />} />
+                    <Route path="/Teacher/class/bulk-attendance/:classId/:subjectId" element={<TeacherBulkAttendance />} />
                     <Route path="/Teacher/tests" element={<TeacherTests selectedClass={selectedClass} />} />
                     <Route path="/logout" element={<Logout />} />
                 </Routes>

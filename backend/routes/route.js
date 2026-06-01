@@ -27,6 +27,7 @@ const {
     deleteStudent,
     updateStudent,
     studentAttendance,
+    bulkStudentAttendance,
     deleteStudentsByClass,
     updateExamResult,
     clearAllStudentsAttendanceBySubject,
@@ -83,7 +84,8 @@ const {
     getPaymentAnalytics,
     exportPaymentData,
     testFeeCreation,
-    completeDemoPayment
+    completeDemoPayment,
+    getFeeSummary,
 } = require('../controllers/fee-controller.js');
 
 // Import fee services
@@ -126,6 +128,7 @@ router.put("/Student/:id", updateStudent)
 router.put('/UpdateExamResult/:id', updateExamResult)
 
 router.put('/StudentAttendance/:id', studentAttendance)
+router.post('/BulkStudentAttendance', bulkStudentAttendance);
 
 router.put('/RemoveAllStudentsSubAtten/:id', clearAllStudentsAttendanceBySubject);
 router.put('/RemoveAllStudentsAtten/:id', clearAllStudentsAttendance);
@@ -224,9 +227,8 @@ router.get('/ComplainStats/:id', getComplainStats);
 router.post('/SclassCreate', sclassCreate);
 
 router.get('/SclassList/:id', sclassList);
-router.get("/Sclass/:id", getSclassDetail)
-
 router.get("/Sclass/Students/:id", getSclassStudents)
+router.get("/Sclass/:id", getSclassDetail)
 
 router.delete("/Sclasses/:id", deleteSclasses)
 router.delete("/Sclass/:id", deleteSclass)
@@ -330,6 +332,9 @@ router.post('/fee/structure', createFeeStructure);
 router.get('/fee/structures/:schoolId', getFeeStructures);
 router.put('/fee/structure/:feeStructureId', updateFeeStructure);
 router.delete('/fee/structure/:feeStructureId', deleteFeeStructure);
+
+// Simple fee summary (uses Mongoose find — no ObjectId cast issues)
+router.get('/fee/summary/:schoolId', getFeeSummary);
 
 // Test route
 router.get('/fee/test', testFeeCreation);
